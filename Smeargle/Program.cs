@@ -50,7 +50,7 @@ namespace Smeargle
 
         private static async Task Discord_MessageReceived(SocketMessage message)
         {
-            if (message.Channel.Id != discordConfig.ChannelId || message.Author.Username == discordClient.CurrentUser.Username)
+            if (message.Author.Username == discordClient.CurrentUser.Username)
             {
                 return;
             }
