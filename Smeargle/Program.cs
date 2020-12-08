@@ -15,10 +15,14 @@ namespace Smeargle
 {
     class Program
     {
+        private static readonly Random random = new Random();
+        private static readonly HttpClient httpClient = new HttpClient();
+
         private static InvisionCommunityConfiguration ipsConfig;
         private static DiscordConnectionInfo discordConfig;
         
         private static DiscordSocketClient discordClient;
+        private static ManualResetEventSlim disconnectedEvent = new ManualResetEventSlim(false);
 
         private static ApiClient ipsClient;
         private static Dictionary<string, int> albumsByPokemon;
@@ -26,8 +30,6 @@ namespace Smeargle
         private static SemaphoreSlim DictionaryLoadLock = new SemaphoreSlim(1);
         private static SemaphoreSlim ImageDownloadLock = new SemaphoreSlim(1);
 
-        private static Random random = new Random();
-        private static HttpClient httpClient = new HttpClient();
 
         static async Task Main(string[] args)
         {
@@ -42,10 +44,12 @@ namespace Smeargle
             discordClient = new DiscordSocketClient();
             await discordClient.LoginAsync(Discord.TokenType.Bot, discordConfig.Token);
             discordClient.MessageReceived += Discord_MessageReceived;
+            discordClient.Disconnected += Discord_Disconnected;
             await discordClient.StartAsync();
 
-            Console.WriteLine("Waiting forever");
-            await Task.Delay(Timeout.Infinite);
+
+            Console.WriteLine("Waiting until disconnected");
+            disconnectedEvent.Wait();
         }
 
         private static async Task Discord_MessageReceived(SocketMessage message)
@@ -104,6 +108,13 @@ namespace Smeargle
             }
         }
 
+        private static Task Discord_Disconnected(Exception ex)
+        {
+            Console.WriteLine("Disconnected with exception: " + ex.ToString());
+            disconnectedEvent.Set();
+            return Task.CompletedTask;
+        }
+         
         private static void LoadAlbums()
         {
             var albums = ipsClient.GetAlbums(new GetAlbumsRequest { categories = ipsConfig.GalleryCategoryId.ToString() }).ToList();
