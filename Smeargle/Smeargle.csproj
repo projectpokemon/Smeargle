@@ -4,6 +4,7 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
     <TargetRuntimes>win-x64;linux-x64</TargetRuntimes>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
