@@ -71,42 +71,53 @@ namespace Smeargle
             {
                 await message.Channel.SendMessageAsync("Dong!");
             }
+            else if (message.Content.StartsWith("!random", StringComparison.OrdinalIgnoreCase))
+            {
+                var randomPokemonName = albumsByPokemon.Skip(random.Next(0, albumsByPokemon.Count)).First().Key;
+                await Discord_PostPokemon(randomPokemonName, message);
+            }
             else if (message.Content.StartsWith("!"))
             {
                 if (albumsByPokemon.ContainsKey(message.Content.TrimStart('!')))
                 {
-                    var albumId = albumsByPokemon[message.Content.TrimStart('!')];
-                    var url = await GetRandomAlbumImageUrl(albumId);
-                    var localPath = Path.Combine("cache", Path.GetFileName(url));
-                    if (!File.Exists(localPath))
-                    {
-                        await ImageDownloadLock.WaitAsync();
-                        try
-                        {
-                            var response = await httpClient.GetAsync(url);
-                            var responseData = await response.Content.ReadAsByteArrayAsync();
-                            if (!Directory.Exists("cache"))
-                            {
-                                Directory.CreateDirectory("cache");
-                            }
-                            File.WriteAllBytes(localPath, responseData);
-                        }
-                        finally
-                        {
-                            ImageDownloadLock.Release();
-                        }
-                    }
-
-                    var data = File.ReadAllBytes(localPath);
-                    if (data.Length < 8 * 1024 * 1024)
-                    {
-                        await message.Channel.SendFileAsync(localPath);
-                    }
-                    else
-                    {
-                        await message.Channel.SendMessageAsync(url);
-                    }
+                    var pokemonName = message.Content.TrimStart('!');
+                    await Discord_PostPokemon(pokemonName, message);
                 }
+            }
+        }
+
+        private static async Task Discord_PostPokemon(string pokemonName, SocketMessage message)
+        {
+            var albumId = albumsByPokemon[pokemonName];
+            var url = await GetRandomAlbumImageUrl(albumId);
+            var localPath = Path.Combine("cache", Path.GetFileName(url));
+            if (!File.Exists(localPath))
+            {
+                await ImageDownloadLock.WaitAsync();
+                try
+                {
+                    var response = await httpClient.GetAsync(url);
+                    var responseData = await response.Content.ReadAsByteArrayAsync();
+                    if (!Directory.Exists("cache"))
+                    {
+                        Directory.CreateDirectory("cache");
+                    }
+                    File.WriteAllBytes(localPath, responseData);
+                }
+                finally
+                {
+                    ImageDownloadLock.Release();
+                }
+            }
+
+            var data = File.ReadAllBytes(localPath);
+            if (data.Length < 8 * 1024 * 1024)
+            {
+                await message.Channel.SendFileAsync(localPath);
+            }
+            else
+            {
+                await message.Channel.SendMessageAsync(url);
             }
         }
 
