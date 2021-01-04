@@ -49,7 +49,6 @@ namespace Smeargle
             discordClient.Disconnected += Discord_Disconnected;
             await discordClient.StartAsync();
 
-
             Console.WriteLine("Waiting until disconnected");
             disconnectedEvent.Wait();
         }
@@ -78,9 +77,9 @@ namespace Smeargle
             }
             else if (message.Content.StartsWith("!"))
             {
-                if (albumsByPokemon.ContainsKey(message.Content.TrimStart('!')))
+                var pokemonName = message.Content.TrimStart('!');
+                if (albumsByPokemon.ContainsKey(pokemonName))
                 {
-                    var pokemonName = message.Content.TrimStart('!');
                     await Discord_PostPokemon(pokemonName, message);
                 }
             }
