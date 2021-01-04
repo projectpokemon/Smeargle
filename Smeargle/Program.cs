@@ -4,6 +4,7 @@ using IPSClient.Objects.Gallery;
 using Newtonsoft.Json;
 using Smeargle.Configuration;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -25,11 +26,12 @@ namespace Smeargle
         private static ManualResetEventSlim disconnectedEvent = new ManualResetEventSlim(false);
 
         private static ApiClient ipsClient;
-        private static Dictionary<string, int> albumsByPokemon;
-        private static Dictionary<int, List<string>> imagesByAlbum;
+        private static ConcurrentDictionary<string, int> albumsByPokemon;
+        private static Dictionary<int, List<string>>? imagesByAlbum;
         private static SemaphoreSlim DictionaryLoadLock = new SemaphoreSlim(1);
         private static SemaphoreSlim ImageDownloadLock = new SemaphoreSlim(1);
 
+        private static Timer? albumsRefreshTimer;
 
         static async Task Main(string[] args)
         {
@@ -46,7 +48,6 @@ namespace Smeargle
             discordClient.MessageReceived += Discord_MessageReceived;
             discordClient.Disconnected += Discord_Disconnected;
             await discordClient.StartAsync();
-
 
             Console.WriteLine("Waiting until disconnected");
             disconnectedEvent.Wait();
@@ -69,42 +70,53 @@ namespace Smeargle
             {
                 await message.Channel.SendMessageAsync("Dong!");
             }
+            else if (message.Content.StartsWith("!random", StringComparison.OrdinalIgnoreCase))
+            {
+                var randomPokemonName = albumsByPokemon.Skip(random.Next(0, albumsByPokemon.Count)).First().Key;
+                await Discord_PostPokemon(randomPokemonName, message);
+            }
             else if (message.Content.StartsWith("!"))
             {
-                if (albumsByPokemon.ContainsKey(message.Content.TrimStart('!')))
+                var pokemonName = message.Content.TrimStart('!');
+                if (albumsByPokemon.ContainsKey(pokemonName))
                 {
-                    var albumId = albumsByPokemon[message.Content.TrimStart('!')];
-                    var url = await GetRandomAlbumImageUrl(albumId);
-                    var localPath = Path.Combine("cache", Path.GetFileName(url));
-                    if (!File.Exists(localPath))
-                    {
-                        await ImageDownloadLock.WaitAsync();
-                        try
-                        {
-                            var response = await httpClient.GetAsync(url);
-                            var responseData = await response.Content.ReadAsByteArrayAsync();
-                            if (!Directory.Exists("cache"))
-                            {
-                                Directory.CreateDirectory("cache");
-                            }
-                            File.WriteAllBytes(localPath, responseData);
-                        }
-                        finally
-                        {
-                            ImageDownloadLock.Release();
-                        }
-                    }
-
-                    var data = File.ReadAllBytes(localPath);
-                    if (data.Length < 8 * 1024 * 1024)
-                    {
-                        await message.Channel.SendFileAsync(localPath);
-                    }
-                    else
-                    {
-                        await message.Channel.SendMessageAsync(url);
-                    }
+                    await Discord_PostPokemon(pokemonName, message);
                 }
+            }
+        }
+
+        private static async Task Discord_PostPokemon(string pokemonName, SocketMessage message)
+        {
+            var albumId = albumsByPokemon[pokemonName];
+            var url = await GetRandomAlbumImageUrl(albumId);
+            var localPath = Path.Combine("cache", Path.GetFileName(url));
+            if (!File.Exists(localPath))
+            {
+                await ImageDownloadLock.WaitAsync();
+                try
+                {
+                    var response = await httpClient.GetAsync(url);
+                    var responseData = await response.Content.ReadAsByteArrayAsync();
+                    if (!Directory.Exists("cache"))
+                    {
+                        Directory.CreateDirectory("cache");
+                    }
+                    File.WriteAllBytes(localPath, responseData);
+                }
+                finally
+                {
+                    ImageDownloadLock.Release();
+                }
+            }
+
+            var data = File.ReadAllBytes(localPath);
+            if (data.Length < 8 * 1024 * 1024)
+            {
+                await message.Channel.SendFileAsync(localPath);
+            }
+            else
+            {
+                await message.Channel.SendMessageAsync(url);
             }
         }
 
@@ -117,15 +129,40 @@ namespace Smeargle
          
         private static void LoadAlbums()
         {
+            albumsByPokemon = new ConcurrentDictionary<string, int>(StringComparer.InvariantCultureIgnoreCase);
+
+            RefreshAlbums();
+
+            const int oneHourInMilliseconds = 60 * 60 * 1000 /* 1 hour */;
+            albumsRefreshTimer = new Timer(new TimerCallback(_ => RefreshAlbums()), state: null, dueTime: oneHourInMilliseconds, period: oneHourInMilliseconds);
+        }
+
+        private static void RefreshAlbums()
+        {
             var albums = ipsClient.GetAlbums(new GetAlbumsRequest { categories = ipsConfig.GalleryCategoryId.ToString() }).ToList();
-            albumsByPokemon = new Dictionary<string, int>(StringComparer.InvariantCultureIgnoreCase);
-            imagesByAlbum = new Dictionary<int, List<string>>();
             foreach (var album in albums)
             {
                 // Album names are in the form "001 Bulbasaur", "447 Riolu", etc.
                 if (album.name.Contains(" "))
                 {
-                    albumsByPokemon.TryAdd(album.name.Split(' ')[1], album.id);
+                    albumsByPokemon[album.name.Split(' ', 2)[1]] = album.id;
+                }
+                else
+                {
+                    albumsByPokemon[album.name] = album.id;
+                }
+            }
+
+            if (imagesByAlbum != null)
+            {
+                DictionaryLoadLock.Wait();
+                try
+                {
+                    imagesByAlbum = null;
+                }
+                finally
+                {
+                    DictionaryLoadLock.Release();
                 }
             }
         }
@@ -133,11 +170,12 @@ namespace Smeargle
         private static async Task<string> GetRandomAlbumImageUrl(int albumId)
         {
             // To-do: invalidate our cache after a while
-            if (!imagesByAlbum.ContainsKey(albumId))
+            if (imagesByAlbum == null || !imagesByAlbum.ContainsKey(albumId))
             {
                 await DictionaryLoadLock.WaitAsync();
                 try
                 {
+                    imagesByAlbum ??= new Dictionary<int, List<string>>();
                     if (!imagesByAlbum.ContainsKey(albumId))
                     {
                         var images = ipsClient.GetImages(new GetImagesRequest { albums = albumId.ToString() });
