@@ -9,6 +9,6 @@ namespace Smeargle
         /// <summary>
         /// Access token of the bot to connect with
         /// </summary>
-        public string Token { get; set; }
+        public string Token { get; set; } = default!;
     }
 }
