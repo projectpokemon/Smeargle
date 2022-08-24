@@ -6,8 +6,8 @@ namespace Smeargle.Configuration
 {
     public class InvisionCommunityConfiguration
     {
-        public string ApiKey { get; set; }
-        public string BaseUrl { get; set; }
+        public string ApiKey { get; set; } = default!;
+        public string BaseUrl { get; set; } = default!;
         public int GalleryCategoryId { get; set; }
     }
 }

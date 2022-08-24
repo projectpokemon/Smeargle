@@ -19,14 +19,14 @@ namespace Smeargle
         private static readonly Random random = new Random();
         private static readonly HttpClient httpClient = new HttpClient();
 
-        private static InvisionCommunityConfiguration ipsConfig;
-        private static DiscordConnectionInfo discordConfig;
+        private static InvisionCommunityConfiguration ipsConfig = default!;
+        private static DiscordConnectionInfo discordConfig = default!;
         
-        private static DiscordSocketClient discordClient;
+        private static DiscordSocketClient discordClient = default!;
         private static ManualResetEventSlim disconnectedEvent = new ManualResetEventSlim(false);
 
-        private static ApiClient ipsClient;
-        private static ConcurrentDictionary<string, int> albumsByPokemon;
+        private static ApiClient ipsClient = default!;
+        private static ConcurrentDictionary<string, int> albumsByPokemon = default!;
         private static Dictionary<int, List<string>>? imagesByAlbum;
         private static SemaphoreSlim DictionaryLoadLock = new SemaphoreSlim(1);
         private static SemaphoreSlim ImageDownloadLock = new SemaphoreSlim(1);
@@ -35,8 +35,8 @@ namespace Smeargle
 
         static async Task Main(string[] args)
         {
-            ipsConfig = JsonConvert.DeserializeObject<InvisionCommunityConfiguration>(File.ReadAllText("ips.config"));
-            discordConfig = JsonConvert.DeserializeObject<DiscordConnectionInfo>(File.ReadAllText("discord.config"));
+            ipsConfig = JsonConvert.DeserializeObject<InvisionCommunityConfiguration>(File.ReadAllText("ips.config")) ?? throw new Exception("Failed to deserialize ips.config");
+            discordConfig = JsonConvert.DeserializeObject<DiscordConnectionInfo>(File.ReadAllText("discord.config")) ?? throw new Exception("Failed to deserialize discord.config");
 
             Console.WriteLine("Loading stuff from forum");
             ipsClient = new ApiClient(ipsConfig.BaseUrl, ipsConfig.ApiKey);
